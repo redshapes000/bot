@@ -1,0 +1,33 @@
+# dependencies
+node_modules/
+
+# env file (VERY IMPORTANT - keeps your bot token private)
+.env
+
+# config / database files
+config.json
+*.sqlite
+*.db
+
+# logs
+logs/
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# editor files
+.vscode/
+.idea/
+
+# runtime
+dist/
+build/
+
+# npm debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# optional: lock file (usually you KEEP package-lock.json, so DO NOT ignore it)
