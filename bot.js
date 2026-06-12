@@ -33,17 +33,22 @@ if (fs.existsSync(commandsPath)) {
 
     for (const file of commandFiles) {
 
-        const filePath = path.join(commandsPath, file);
-
         try {
-            const command = require(filePath);
+
+            const command = require(
+                path.join(commandsPath, file)
+            );
 
             if (!command.data || !command.execute) {
-                console.log(`[SKIP] ${file} missing data/execute`);
+                console.log(`[SKIP] ${file} invalid command`);
                 continue;
             }
 
-            client.commands.set(command.data.name, command);
+            client.commands.set(
+                command.data.name,
+                command
+            );
+
             commands.push(command.data.toJSON());
 
             console.log(`[CMD] Loaded ${command.data.name}`);
@@ -66,13 +71,14 @@ if (fs.existsSync(eventsPath)) {
 
     for (const file of eventFiles) {
 
-        const filePath = path.join(eventsPath, file);
-
         try {
-            const event = require(filePath);
+
+            const event = require(
+                path.join(eventsPath, file)
+            );
 
             if (!event.name || !event.execute) {
-                console.log(`[SKIP] ${file} missing name/execute`);
+                console.log(`[SKIP] ${file} invalid event`);
                 continue;
             }
 
@@ -94,88 +100,31 @@ if (fs.existsSync(eventsPath)) {
     }
 }
 
-/* ---------------- SLASH COMMAND DEPLOY ---------------- */
+/* ---------------- DEPLOY SLASH COMMANDS ---------------- */
 
 async function deployCommands() {
 
-    const rest = new REST({ version: "10" }).setToken(process.env.TOKEN);
+    const rest = new REST({ version: "10" })
+        .setToken(process.env.TOKEN);
 
     try {
-        console.log(`Deploying ${commands.length} commands...`);
+
+        console.log(
+            `Deploying ${commands.length} commands...`
+        );
 
         await rest.put(
-            Routes.applicationCommands(process.env.CLIENT_ID),
+            Routes.applicationCommands(
+                process.env.CLIENT_ID
+            ),
             { body: commands }
         );
 
         console.log("Commands deployed.");
+
     } catch (err) {
-        console.error("Command deploy error:", err);
+        console.error("Deploy error:", err);
     }
-}
-
-/* ---------------- VOTE WEBHOOK START ---------------- */
-
-function startVoteSystem() {
-
-    const express = require("express");
-    const app = express();
-
-    app.use(express.json());
-
-    // DEBUG (shows all incoming requests)
-    app.use((req, res, next) => {
-        console.log(`[WEBHOOK] ${req.method} ${req.url}`);
-        next();
-    });
-
-    /* ---------------- TOP.GG ---------------- */
-    app.post("/topgg", async (req, res) => {
-
-        if (req.headers.authorization !== process.env.TOPGG_WEBHOOK) {
-            return res.sendStatus(401);
-        }
-
-        const userId = req.body.user;
-
-        if (!userId) return res.sendStatus(400);
-
-        console.log(`[TOP.GG VOTE] ${userId}`);
-
-        try {
-            const user = await client.users.fetch(userId);
-            user.send("🎉 Thanks for voting on Top.gg!");
-        } catch {}
-
-        res.sendStatus(200);
-    });
-
-    /* ---------------- DBL ---------------- */
-    app.post("/dbl", async (req, res) => {
-
-        if (req.headers["x-authorization"] !== process.env.DBL_WEBHOOK) {
-            return res.sendStatus(401);
-        }
-
-        const userId = req.body.user;
-
-        if (!userId) return res.sendStatus(400);
-
-        console.log(`[DBL VOTE] ${userId}`);
-
-        try {
-            const user = await client.users.fetch(userId);
-            user.send("🎉 Thanks for voting on DBL!");
-        } catch {}
-
-        res.sendStatus(200);
-    });
-
-    const port = process.env.PORT || 3000;
-
-    app.listen(port, () => {
-        console.log(`[WEBHOOK] Listening on port ${port}`);
-    });
 }
 
 /* ---------------- READY ---------------- */
@@ -185,7 +134,6 @@ client.once("ready", async () => {
     console.log(`${client.user.tag} online`);
 
     await deployCommands();
-    startVoteSystem();
 });
 
 /* ---------------- LOGIN ---------------- */
