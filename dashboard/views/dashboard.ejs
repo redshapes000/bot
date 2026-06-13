@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Limey Dashboard</title>
+</head>
+<body style="font-family: Arial;">
+
+    <h1>Welcome, <%= user.username %></h1>
+
+    <img src="https://cdn.discordapp.com/avatars/<%= user.id %>/<%= user.avatar %>.png" width="100">
+
+    <p>User ID: <%= user.id %></p>
+
+    <br>
+
+    <a href="/logout">Logout</a>
+
+</body>
+</html>
