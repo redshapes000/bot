@@ -1,7 +1,60 @@
-<h1>Limey Dashboard</h1>
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Limey Dashboard</title>
+
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #ffffff;
+            color: #111;
+            text-align: center;
+        }
+
+        .top {
+            background: #32cd32;
+            color: white;
+            padding: 30px;
+            font-size: 28px;
+            font-weight: bold;
+        }
+
+        .card {
+            margin-top: 80px;
+        }
+
+        a.button {
+            display: inline-block;
+            padding: 12px 20px;
+            background: #32cd32;
+            color: white;
+            text-decoration: none;
+            border-radius: 8px;
+            margin-top: 20px;
+        }
+
+        a.button:hover {
+            background: #28a428;
+        }
+    </style>
+</head>
+
+<body>
+
+<div class="top">🌿 Limey Dashboard</div>
+
+<div class="card">
 
 <% if (!user) { %>
-    <a href="/login">Login with Discord</a>
+    <h2>Welcome</h2>
+    <a class="button" href="/login">Login with Discord</a>
 <% } else { %>
-    <a href="/dashboard">Go to Dashboard</a>
+    <h2>Welcome back!</h2>
+    <a class="button" href="/dashboard">Enter Dashboard</a>
 <% } %>
+
+</div>
+
+</body>
+</html>
