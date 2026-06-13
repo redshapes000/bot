@@ -1,19 +1,11 @@
-<!DOCTYPE html>
-<html>
-<head>
-    <title>Limey Dashboard</title>
-</head>
-<body style="font-family: Arial;">
+<h1>Welcome <%= user.username %></h1>
 
-    <h1>Welcome, <%= user.username %></h1>
+<p>Servers: <%= stats.servers %></p>
+<p>Users: <%= stats.users %></p>
+<p>Ping: <%= stats.ping %>ms</p>
 
-    <img src="https://cdn.discordapp.com/avatars/<%= user.id %>/<%= user.avatar %>.png" width="100">
+<h2>Your Servers</h2>
 
-    <p>User ID: <%= user.id %></p>
-
-    <br>
-
-    <a href="/logout">Logout</a>
-
-</body>
-</html>
+<% guilds.forEach(g => { %>
+    <a href="/server/<%= g.id %>"><%= g.name %></a><br>
+<% }) %>
