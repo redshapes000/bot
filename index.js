@@ -46,11 +46,17 @@ function antiSpam(userId) {
 // ================= EXPRESS DASHBOARD =================
 const app = express();
 
+app.set('trust proxy', 1);
+
 app.use(session({
     secret: process.env.SESSION_SECRET || 'dev_secret',
     resave: false,
     saveUninitialized: false,
-    cookie: { secure: false }
+    cookie: {
+        secure: process.env.NODE_ENV === 'production',
+        httpOnly: true,
+        sameSite: 'lax'
+    }
 }));
 
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
