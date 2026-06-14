@@ -1,6 +1,6 @@
 require('dotenv').config();
 
-const { Client } = require('discord.js-selfbot-v13');
+const { Client } = require(process.env.DISCORD_VERSION);
 const fs = require('fs');
 const express = require('express');
 const mongoose = require('mongoose');
