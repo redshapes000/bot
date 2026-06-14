@@ -42,7 +42,11 @@ router.get('/auth/discord/callback', async (req, res) => {
             headers: { Authorization: `Bearer ${accessToken}` }
         });
 
-        req.session.user = { id: userRes.data.id, username: `${userRes.data.username}#${userRes.data.discriminator}` };
+        req.session.user = {
+            id: userRes.data.id,
+            username: `${userRes.data.username}#${userRes.data.discriminator}`,
+            displayName: userRes.data.global_name || userRes.data.username
+        };
         return res.redirect('/dashboard');
     } catch (err) {
         console.error('OAuth callback error', err?.response?.data || err.message || err);

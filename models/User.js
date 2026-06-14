@@ -2,6 +2,7 @@ const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
     userId: String,
+    displayName: String,
     wallet: { type: Number, default: 0 },
     bank: { type: Number, default: 0 },
 
@@ -16,9 +17,21 @@ const userSchema = new mongoose.Schema({
 
 const User = mongoose.models.User || mongoose.model('User', userSchema);
 
-async function getUser(id) {
+function resolveDisplayName(user, fallback) {
+    return user?.displayName || user?.globalName || user?.username || fallback;
+}
+
+async function getUser(id, discordUser) {
+    const displayName = resolveDisplayName(discordUser, id);
     let user = await User.findOne({ userId: id });
-    if (!user) user = await User.create({ userId: id });
+
+    if (!user) {
+        user = await User.create({ userId: id, displayName });
+    } else if (displayName && user.displayName !== displayName) {
+        user.displayName = displayName;
+        await user.save();
+    }
+
     return user;
 }
 

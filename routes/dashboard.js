@@ -4,6 +4,19 @@ const { layout, money } = require('./pages');
 
 const router = express.Router();
 
+function escapeHtml(value) {
+    return String(value)
+        .replaceAll('&', '&amp;')
+        .replaceAll('<', '&lt;')
+        .replaceAll('>', '&gt;')
+        .replaceAll('\"', '&quot;')
+        .replaceAll("'", '&#39;');
+}
+
+function leaderboardName(user) {
+    return escapeHtml(user.displayName || user.userId);
+}
+
 router.get('/dashboard', async (req, res) => {
     const users = await User.find();
     const top = await User.find().sort({ wallet: -1 }).limit(10);
@@ -18,11 +31,11 @@ router.get('/dashboard', async (req, res) => {
         </div>`;
 
     if (loggedIn) {
-        const me = await getUser(req.session.user.id);
+        const me = await getUser(req.session.user.id, req.session.user);
         personalSection = `
         <div class="card">
             <h2>Your Stats</h2>
-            <p><strong>${req.session.user.username}</strong></p>
+            <p><strong>${escapeHtml(me.displayName || req.session.user.username)}</strong></p>
             <div class="rank"><span>Wallet</span><span>$${money(me.wallet)}</span></div>
             <div class="rank"><span>Bank</span><span>$${money(me.bank)}</span></div>
             <div class="rank"><span>Inventory</span><span>${me.inventory.length ? me.inventory.join(', ') : 'Empty'}</span></div>
@@ -49,7 +62,7 @@ router.get('/dashboard', async (req, res) => {
             <div class="card wide">
                 <h2>🏆 Leaderboard</h2>
                 <div class="leaderboard">
-                    ${top.length ? top.map((user, index) => `<div class="rank"><span>#${index + 1} ${user.userId}</span><span>$${money(user.wallet)}</span></div>`).join('') : '<p>No users yet. Run some commands to start the economy.</p>'}
+                    ${top.length ? top.map((user, index) => `<div class="rank"><span>#${index + 1} ${leaderboardName(user)}</span><span>$${money(user.wallet)}</span></div>`).join('') : '<p>No users yet. Run some commands to start the economy.</p>'}
                 </div>
             </div>
         </section>`
