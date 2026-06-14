@@ -286,11 +286,16 @@ client.on('messageCreate', async (message) => {
 • lemoney!help
 • lemoney!website
 • lemoney!ping
+• lemoney!status
         `);
     }
 
     if (message.content === 'lemoney!website') {
         return message.reply(`https://limeydiscordbot.onrender.com`);
+    }
+    
+    if (message.content === 'lemoney!status') {
+        return message.reply(`https://lemoneydiscordbot.betteruptime.com/`);
     }
 });
 
