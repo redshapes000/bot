@@ -265,7 +265,12 @@ client.on('messageCreate', async (message) => {
 
 ℹ️ Utility
 • lemoney!help
+• lemoney!website
+• lemoney!ping
         `);
+    }
+    if (message.content === 'lemoney!website') {
+    return message.reply(`https://limeydiscordbot.onrender.com`);
     }
 });
 
