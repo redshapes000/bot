@@ -385,19 +385,33 @@ client.on('messageCreate', async (message) => {
     }
 
     // ---------------- HELP ----------------
-    if (message.content === 'lemoney!help') {
+        if (message.content === 'lemoney!help') {
         return message.reply(`
-💰 Lemoney Commands
+💰 **Lemoney Commands**
 
-lemoney!balance
-lemoney!daily
-lemoney!work
-lemoney!weekly
-lemoney!monthly
-lemoney!yearly
-lemoney!deposit <amount>
-lemoney!withdraw <amount>
-lemoney!leaderboard
+📊 Economy
+• lemoney!balance - Check your wallet & bank
+• lemoney!daily - Claim daily reward (streak system)
+• lemoney!work - Earn random money
+
+📅 Rewards
+• lemoney!weekly - Weekly reward (streak bonus)
+• lemoney!monthly - Monthly reward (streak bonus)
+• lemoney!yearly - Yearly reward
+
+🏦 Banking
+• lemoney!deposit <amount> - Deposit money into bank
+• lemoney!withdraw <amount> - Withdraw money from bank
+
+🏆 Leaderboards
+• lemoney!leaderboard - Top richest users
+
+🌐 Info
+• lemoney!website - View bot dashboard
+• lemoney!status - Check bot uptime status
+
+⚙️ System
+• All commands are protected with cooldowns & anti-spam
         `);
     }
 
