@@ -15,6 +15,7 @@ const rateLimit = require('express-rate-limit');
 // ================= MONGODB =================
 mongoose.connect(process.env.MONGO_URI);
 
+// ================= USER MODEL =================
 const userSchema = new mongoose.Schema({
     userId: String,
     wallet: { type: Number, default: 0 },
@@ -22,27 +23,45 @@ const userSchema = new mongoose.Schema({
 
     lastDaily: { type: Number, default: 0 },
     lastWork: { type: Number, default: 0 },
+    lastRob: { type: Number, default: 0 },
 
-    dailyStreak: { type: Number, default: 0 }
+    dailyStreak: { type: Number, default: 0 },
+
+    inventory: { type: Array, default: [] }
 });
 
 const User = mongoose.model('User', userSchema);
 
-// ================= SAFE AMOUNT =================
-function safeAmount(amount) {
-    const num = parseInt(amount);
-    if (isNaN(num) || num <= 0) return null;
-    if (num > 1_000_000) return null;
-    return num;
+// ================= SHOP =================
+const shopItems = [
+    { id: "lucky_charm", name: "🍀 Lucky Charm", price: 5000, boost: "rob" },
+    { id: "laptop", name: "💻 Hacker Laptop", price: 10000, boost: "work" },
+    { id: "mask", name: "🎭 Robber Mask", price: 7500, boost: "rob_success" }
+];
+
+// ================= ANTI CHEAT SYSTEM =================
+const cooldownMap = new Map();
+const robCooldown = new Map();
+
+function antiSpam(userId) {
+    const now = Date.now();
+    const last = cooldownMap.get(userId) || 0;
+    if (now - last < 1200) return false;
+    cooldownMap.set(userId, now);
+    return true;
 }
 
-// ================= EXPRESS =================
+// ================= GET USER =================
+async function getUser(id) {
+    let user = await User.findOne({ userId: id });
+    if (!user) user = await User.create({ userId: id });
+    return user;
+}
+
+// ================= EXPRESS DASHBOARD =================
 const app = express();
 
-app.use(rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 100
-}));
+app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
 
 app.get('/', async (req, res) => {
     const users = await User.find();
@@ -53,27 +72,14 @@ app.get('/', async (req, res) => {
 
     res.send(`
     <html>
-    <head>
-        <title>Limey Dashboard</title>
-        <style>
-            body { background:#0f1115;color:white;font-family:Arial;text-align:center; }
-            .card { background:#1a1d24;padding:20px;margin:10px;border-radius:10px; }
-            .green { color:#00ff99; }
-        </style>
-    </head>
-    <body>
+    <body style="background:#0f1115;color:white;font-family:Arial;text-align:center">
+    <h1>💰 Economy Dashboard</h1>
 
-    <h1 class="green">💰 Limey Dashboard</h1>
+    <div>Total Users: ${users.length}</div>
+    <div>Total Economy: $${total}</div>
 
-    <div class="card">Users: ${users.length}</div>
-    <div class="card">Total Economy: $${total}</div>
-    <div class="card">Status: 🟢 Online</div>
-
-    <div class="card">
-        <h2>🏆 Leaderboard</h2>
-        ${top.map((u,i)=>`#${i+1} ${u.userId} - $${u.wallet}`).join("<br>")}
-    </div>
-
+    <h2>🏆 Leaderboard</h2>
+    ${top.map((u,i)=>`#${i+1} ${u.userId} - $${u.wallet}`).join("<br>")}
     </body>
     </html>
     `);
@@ -83,79 +89,78 @@ app.listen(process.env.PORT || 3000);
 
 // ================= DISCORD CLIENT =================
 const client = new Client({
-    intents: [
-        GatewayIntentBits.Guilds,
-        GatewayIntentBits.GuildMessages,
-        GatewayIntentBits.MessageContent
-    ]
+    intents: [GatewayIntentBits.Guilds]
 });
-
-const cooldown = new Map();
-
-// ================= GET USER =================
-async function getUser(id) {
-    let user = await User.findOne({ userId: id });
-    if (!user) user = await User.create({ userId: id });
-    return user;
-}
 
 // ================= SLASH COMMANDS =================
 const commands = [
+
     new SlashCommandBuilder().setName('balance').setDescription('Check balance'),
+
     new SlashCommandBuilder().setName('daily').setDescription('Claim daily reward'),
+
     new SlashCommandBuilder().setName('work').setDescription('Work for money'),
+
+    new SlashCommandBuilder()
+        .setName('pay')
+        .setDescription('Pay another user')
+        .addUserOption(o => o.setName('user').setDescription('User').setRequired(true))
+        .addIntegerOption(o => o.setName('amount').setDescription('Amount').setRequired(true)),
+
+    new SlashCommandBuilder()
+        .setName('rob')
+        .setDescription('Try robbing a user')
+        .addUserOption(o => o.setName('user').setDescription('User').setRequired(true)),
+
+    new SlashCommandBuilder().setName('shop').setDescription('View shop'),
+
+    new SlashCommandBuilder()
+        .setName('buy')
+        .setDescription('Buy item')
+        .addStringOption(o => o.setName('item').setDescription('Item ID').setRequired(true)),
+
+    new SlashCommandBuilder().setName('inventory').setDescription('View inventory'),
+
     new SlashCommandBuilder().setName('leaderboard').setDescription('Top users'),
-    new SlashCommandBuilder().setName('help').setDescription('Commands list')
+
+    new SlashCommandBuilder().setName('help').setDescription('Commands')
+
 ].map(c => c.toJSON());
 
+// ================= REGISTER COMMANDS =================
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
 (async () => {
-    try {
-        console.log("🔄 Registering slash commands...");
-        await rest.put(
-            Routes.applicationCommands(process.env.CLIENT_ID),
-            { body: commands }
-        );
-        console.log("✅ Slash commands ready");
-    } catch (err) {
-        console.error(err);
-    }
+    await rest.put(
+        Routes.applicationCommands(process.env.CLIENT_ID),
+        { body: commands }
+    );
 })();
 
-// ================= PREFIX + SLASH =================
+// ================= SLASH HANDLER =================
+client.on('interactionCreate', async (i) => {
+    if (!i.isChatInputCommand()) return;
 
-// PREFIX COMMANDS
-client.on('messageCreate', async (message) => {
-    if (message.author.bot) return;
-
+    const user = await getUser(i.user.id);
     const now = Date.now();
-    const last = cooldown.get(message.author.id) || 0;
-    if (now - last < 1200) return;
-    cooldown.set(message.author.id, now);
 
-    const user = await getUser(message.author.id);
-    const msg = message.content.toLowerCase();
-
-    // BALANCE
-    if (msg === 'limey!balance') {
-        return message.reply(`💰 Wallet: $${user.wallet}\n🏦 Bank: $${user.bank}`);
+    if (!antiSpam(i.user.id)) {
+        return i.reply({ content: "⏳ Slow down (anti-spam)", ephemeral: true });
     }
 
-    // DAILY
-    if (msg === 'limey!daily') {
-        const cooldownTime = 86400000;
+    // ================= BALANCE =================
+    if (i.commandName === 'balance') {
+        return i.reply(`💰 Wallet: $${user.wallet}\n🏦 Bank: $${user.bank}`);
+    }
 
-        if (now - user.lastDaily < cooldownTime) {
-            const hours = Math.ceil((cooldownTime - (now - user.lastDaily)) / 3600000);
-            return message.reply(`⏰ Wait ${hours}h`);
-        }
+    // ================= DAILY =================
+    if (i.commandName === 'daily') {
+        const cd = 86400000;
 
-        if (now - user.lastDaily < 172800000 && user.lastDaily) {
-            user.dailyStreak++;
-        } else {
-            user.dailyStreak = 1;
-        }
+        if (now - user.lastDaily < cd)
+            return i.reply({ content: "⏰ Wait for daily", ephemeral: true });
+
+        user.dailyStreak = (now - user.lastDaily < 172800000) ? user.dailyStreak + 1 : 1;
 
         const reward = 1000 + user.dailyStreak * 200;
 
@@ -163,159 +168,136 @@ client.on('messageCreate', async (message) => {
         user.lastDaily = now;
 
         await user.save();
-
-        return message.reply(`🎉 +$${reward} (Streak ${user.dailyStreak})`);
+        return i.reply(`🎉 +$${reward}`);
     }
 
-    // WORK
-    if (msg === 'limey!work') {
-        const cooldownTime = 30 * 60 * 1000;
+    // ================= WORK =================
+    if (i.commandName === 'work') {
+        const cd = 300000;
 
-        if (now - user.lastWork < cooldownTime) {
-            return message.reply(`⏰ You're tired, wait a bit`);
-        }
+        if (now - user.lastWork < cd)
+            return i.reply({ content: "⏰ Rest before working", ephemeral: true });
 
-        const amount = Math.floor(Math.random() * 500) + 100;
+        const amount = Math.floor(Math.random() * 600) + 100;
 
         user.wallet += amount;
         user.lastWork = now;
 
         await user.save();
-
-        return message.reply(`💼 You earned $${amount}`);
+        return i.reply(`💼 +$${amount}`);
     }
 
-    // DEPOSIT
-    if (msg.startsWith('limey!deposit')) {
-        const amount = safeAmount(msg.split(' ')[1]);
-        if (!amount) return message.reply("Invalid amount");
-        if (user.wallet < amount) return message.reply("Not enough money");
+    // ================= PAY =================
+    if (i.commandName === 'pay') {
+        const target = i.options.getUser('user');
+        const amount = i.options.getInteger('amount');
+
+        if (target.id === i.user.id)
+            return i.reply({ content: "❌ You can't pay yourself", ephemeral: true });
+
+        if (amount <= 0 || user.wallet < amount)
+            return i.reply({ content: "❌ Invalid amount", ephemeral: true });
+
+        const receiver = await getUser(target.id);
 
         user.wallet -= amount;
-        user.bank += amount;
+        receiver.wallet += amount;
 
         await user.save();
-        return message.reply(`🏦 Deposited $${amount}`);
+        await receiver.save();
+
+        return i.reply(`💸 Sent $${amount} to ${target.username}`);
     }
 
-    // WITHDRAW
-    if (msg.startsWith('limey!withdraw')) {
-        const amount = safeAmount(msg.split(' ')[1]);
-        if (!amount) return message.reply("Invalid amount");
-        if (user.bank < amount) return message.reply("Not enough bank");
+    // ================= ROB =================
+    if (i.commandName === 'rob') {
+        const target = i.options.getUser('user');
 
-        user.bank -= amount;
-        user.wallet += amount;
+        if (target.id === i.user.id)
+            return i.reply({ content: "❌ Can't rob yourself", ephemeral: true });
+
+        const cd = 600000;
+        if (robCooldown.get(i.user.id) && now - robCooldown.get(i.user.id) < cd)
+            return i.reply({ content: "⏳ Wait before robbing again", ephemeral: true });
+
+        robCooldown.set(i.user.id, now);
+
+        const victim = await getUser(target.id);
+
+        const success = Math.random() > 0.5;
+
+        if (!success || victim.wallet < 100) {
+            user.wallet -= 200;
+            await user.save();
+            return i.reply("🚨 Rob failed! You lost $200");
+        }
+
+        const stolen = Math.floor(victim.wallet * 0.3);
+
+        victim.wallet -= stolen;
+        user.wallet += stolen;
 
         await user.save();
-        return message.reply(`💸 Withdrew $${amount}`);
+        await victim.save();
+
+        return i.reply(`🤑 You robbed $${stolen}`);
     }
 
-    // LEADERBOARD
-    if (msg === 'limey!leaderboard') {
+    // ================= SHOP =================
+    if (i.commandName === 'shop') {
+        return i.reply(
+            shopItems.map(s => `**${s.id}** - ${s.name} - $${s.price}`).join("\n")
+        );
+    }
+
+    // ================= BUY =================
+    if (i.commandName === 'buy') {
+        const itemId = i.options.getString('item');
+
+        const item = shopItems.find(x => x.id === itemId);
+        if (!item) return i.reply({ content: "❌ Item not found", ephemeral: true });
+
+        if (user.wallet < item.price)
+            return i.reply({ content: "❌ Not enough money", ephemeral: true });
+
+        user.wallet -= item.price;
+        user.inventory.push(item.id);
+
+        await user.save();
+
+        return i.reply(`🛒 Bought ${item.name}`);
+    }
+
+    // ================= INVENTORY =================
+    if (i.commandName === 'inventory') {
+        return i.reply(
+            user.inventory.length
+                ? "🎒 " + user.inventory.join(", ")
+                : "🎒 Empty inventory"
+        );
+    }
+
+    // ================= LEADERBOARD =================
+    if (i.commandName === 'leaderboard') {
         const top = await User.find().sort({ wallet: -1 }).limit(10);
 
-        return message.reply(
-            "🏆 Leaderboard\n" +
+        return i.reply(
             top.map((u,i)=>`#${i+1} ${u.userId} - $${u.wallet}`).join("\n")
         );
     }
 
-    // HELP
-    if (msg === 'limey!help') {
-        return message.reply(`
-💰 Limey Commands
-
-limey!balance
-limey!daily
-limey!work
-limey!deposit <amount>
-limey!withdraw <amount>
-limey!leaderboard
-limey!website
-limey!status
-        `);
-    }
-
-    if (msg === 'limey!website') {
-        return message.reply(process.env.WEBSITE_URL || "Not set");
-    }
-
-    if (msg === 'limey!status') {
-        return message.reply(process.env.STATUS_URL || "Not set");
-    }
-});
-
-// SLASH COMMANDS
-client.on('interactionCreate', async (interaction) => {
-    if (!interaction.isChatInputCommand()) return;
-
-    const user = await getUser(interaction.user.id);
-    const now = Date.now();
-
-    if (interaction.commandName === 'balance') {
-        return interaction.reply(`💰 Wallet: $${user.wallet}\n🏦 Bank: $${user.bank}`);
-    }
-
-    if (interaction.commandName === 'daily') {
-        const cooldownTime = 86400000;
-
-        if (now - user.lastDaily < cooldownTime) {
-            const hours = Math.ceil((cooldownTime - (now - user.lastDaily)) / 3600000);
-            return interaction.reply({ content: `⏰ Wait ${hours}h`, ephemeral: true });
-        }
-
-        if (now - user.lastDaily < 172800000 && user.lastDaily) {
-            user.dailyStreak++;
-        } else {
-            user.dailyStreak = 1;
-        }
-
-        const reward = 1000 + user.dailyStreak * 200;
-
-        user.wallet += reward;
-        user.lastDaily = now;
-
-        await user.save();
-
-        return interaction.reply(`🎉 +$${reward} (Streak ${user.dailyStreak})`);
-    }
-
-    if (interaction.commandName === 'work') {
-        const cooldownTime = 30 * 60 * 1000;
-
-        if (now - user.lastWork < cooldownTime) {
-            return interaction.reply({ content: "⏰ You're tired, wait a bit", ephemeral: true });
-        }
-
-        const amount = Math.floor(Math.random() * 500) + 100;
-
-        user.wallet += amount;
-        user.lastWork = now;
-
-        await user.save();
-
-        return interaction.reply(`💼 You earned $${amount}`);
-    }
-
-    if (interaction.commandName === 'leaderboard') {
-        const top = await User.find().sort({ wallet: -1 }).limit(10);
-
-        return interaction.reply(
-            "🏆 Leaderboard\n" +
-            top.map((u,i)=>`#${i+1} ${u.userId} - $${u.wallet}`).join("\n")
-        );
-    }
-
-    if (interaction.commandName === 'help') {
-        return interaction.reply(`
-💰 Limey Commands
-
+    // ================= HELP =================
+    if (i.commandName === 'help') {
+        return i.reply(`
 /balance
 /daily
 /work
+/pay
+/rob
+/shop
+/buy
+/inventory
 /leaderboard
-/help
         `);
     }
 });
