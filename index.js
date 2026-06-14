@@ -40,12 +40,7 @@ function antiSpam(userId) {
     return true;
 }
 
-// ================= GET USER =================
-async function getUser(id) {
-    let user = await User.findOne({ userId: id });
-    if (!user) user = await User.create({ userId: id });
-    return user;
-}
+// Use `getUser` from ./models/User
 
 // ================= EXPRESS DASHBOARD =================
 const app = express();
