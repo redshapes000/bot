@@ -206,6 +206,15 @@ client.on('messageCreate', async (message) => {
 
         return message.reply(`💼 You worked and earned $${amount}!`);
     }
+    if (message.content === 'lemoney!ping') {
+        const sent = Date.now();
+
+        const msg = await message.reply('🏓 Pinging...');
+
+        const latency = Date.now() - sent;
+
+        return msg.edit(`🏓 Pong! Latency: ${latency}ms`);
+    }
 
     if (message.content.startsWith('lemoney!deposit ')) {
         const amount = parseInt(message.content.split(' ')[1]);
