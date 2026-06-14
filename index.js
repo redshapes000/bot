@@ -61,7 +61,13 @@ if (fs.existsSync(routesDir)) {
         .filter(f => f.endsWith('.js'))
         .forEach(file => {
             try {
-                const route = require(path.join(routesDir, file));
+                const routeModule = require(path.join(routesDir, file));
+                const route = routeModule.router || routeModule;
+
+                if (typeof route !== 'function') {
+                    throw new TypeError(`Route module ${file} did not export an Express router`);
+                }
+
                 app.use('/', route);
             } catch (err) {
                 console.error('Failed to load route', file, err);
