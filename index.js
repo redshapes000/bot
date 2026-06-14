@@ -5,7 +5,8 @@ const {
     GatewayIntentBits, 
     REST, 
     Routes,
-    SlashCommandBuilder
+    SlashCommandBuilder,
+    ApplicationCommandType
 } = require('discord.js');
 
 const express = require('express');
@@ -120,16 +121,51 @@ const commands = [
 // ================= REGISTER COMMANDS =================
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
+function copyDefinedFields(source, fields) {
+    return fields.reduce((target, field) => {
+        if (source[field] !== undefined) {
+            target[field] = source[field];
+        }
+
+        return target;
+    }, {});
+}
+
+async function getEntryPointCommands(appId) {
+    const existingCommands = await rest.get(Routes.applicationCommands(appId));
+
+    return existingCommands
+        .filter(command => command.type === ApplicationCommandType.PrimaryEntryPoint)
+        .map(command => copyDefinedFields(command, [
+            'name',
+            'name_localizations',
+            'description',
+            'description_localizations',
+            'type',
+            'handler',
+            'default_member_permissions',
+            'nsfw',
+            'integration_types',
+            'contexts'
+        ]));
+}
+
+async function registerCommands(appId) {
+    const entryPointCommands = await getEntryPointCommands(appId);
+
+    await rest.put(
+        Routes.applicationCommands(appId),
+        { body: [...commands, ...entryPointCommands] }
+    );
+}
+
 const appId = process.env.DISCORD_CLIENT_ID || process.env.CLIENT_ID;
 if (!appId) {
     console.warn('DISCORD_CLIENT_ID not set; skipping application command registration');
 } else {
     (async () => {
         try {
-            await rest.put(
-                Routes.applicationCommands(appId),
-                { body: commands }
-            );
+            await registerCommands(appId);
             console.log('Registered application commands for', appId);
         } catch (err) {
             console.error('Failed to register commands', err);
@@ -141,7 +177,7 @@ if (!appId) {
 client.on('interactionCreate', async (i) => {
     if (!i.isChatInputCommand()) return;
 
-    const user = await getUser(i.user.id);
+    const user = await getUser(i.user.id, i.member || i.user);
     const now = Date.now();
 
     if (!antiSpam(i.user.id)) {
@@ -198,7 +234,7 @@ client.on('interactionCreate', async (i) => {
         if (amount <= 0 || user.wallet < amount)
             return i.reply({ content: "❌ Invalid amount", ephemeral: true });
 
-        const receiver = await getUser(target.id);
+        const receiver = await getUser(target.id, i.options.getMember('user') || target);
 
         user.wallet -= amount;
         receiver.wallet += amount;
@@ -222,7 +258,7 @@ client.on('interactionCreate', async (i) => {
 
         robCooldown.set(i.user.id, now);
 
-        const victim = await getUser(target.id);
+        const victim = await getUser(target.id, i.options.getMember('user') || target);
 
         const success = Math.random() > 0.5;
 
@@ -282,7 +318,7 @@ client.on('interactionCreate', async (i) => {
         const top = await User.find().sort({ wallet: -1 }).limit(10);
 
         return i.reply(
-            top.map((u,i)=>`#${i+1} ${u.userId} - $${u.wallet}`).join("\n")
+            top.map((u,i)=>`#${i+1} ${u.displayName || u.userId} - $${u.wallet}`).join("\n")
         );
     }
 
