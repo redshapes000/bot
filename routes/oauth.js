@@ -43,7 +43,7 @@ router.get('/auth/discord/callback', async (req, res) => {
         });
 
         req.session.user = { id: userRes.data.id, username: `${userRes.data.username}#${userRes.data.discriminator}` };
-        return res.redirect('/');
+        return res.redirect('/dashboard');
     } catch (err) {
         console.error('OAuth callback error', err?.response?.data || err.message || err);
         return res.status(500).send('OAuth Error');
