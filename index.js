@@ -1,24 +1,35 @@
-
 require('dotenv').config();
 
-const {Client} = require('discord.js-selfbot-v13');
+const { Client } = require('discord.js-selfbot-v13');
 const fs = require('fs');
 const express = require('express');
+const mongoose = require('mongoose');
 
-const DATA_FILE = './users.json';
+// ---------------- MONGODB ----------------
+mongoose.connect(process.env.MONGO_URI);
+
+const userSchema = new mongoose.Schema({
+    userId: String,
+    wallet: Number,
+    bank: Number,
+    lastDaily: Number,
+    lastWork: Number
+});
+
+const User = mongoose.model('User', userSchema);
 
 // ---------------- WEB SERVER ----------------
 const app = express();
-const PORT = 3000;
+const PORT = process.env.PORT || 3000;
 
-app.get('/', (req, res) => {
-    const data = loadData();
+app.get('/', async (req, res) => {
+    const data = await User.find();
 
-    let users = Object.keys(data).length;
+    let users = data.length;
     let totalMoney = 0;
 
-    for (const id in data) {
-        totalMoney += (data[id].wallet || 0) + (data[id].bank || 0);
+    for (const u of data) {
+        totalMoney += (u.wallet || 0) + (u.bank || 0);
     }
 
     res.send(`
@@ -111,11 +122,11 @@ app.get('/', (req, res) => {
     `);
 });
 
-app.get('/api/stats', (req, res) => {
-    const data = loadData();
+app.get('/api/stats', async (req, res) => {
+    const data = await User.find();
 
     res.json({
-        users: Object.keys(data).length,
+        users: data.length,
         data
     });
 });
@@ -134,35 +145,27 @@ client.on('ready', async () => {
     console.log(`Client is ready!`);
 });
 
-function loadData() {
-    if (!fs.existsSync(DATA_FILE)) {
-        fs.writeFileSync(DATA_FILE, '{}');
-    }
+// ---------------- HELPERS (MINIMAL CHANGE) ----------------
+async function getUserData(userId) {
+    let user = await User.findOne({ userId });
 
-    return JSON.parse(fs.readFileSync(DATA_FILE));
-}
-
-function saveData(data) {
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 4));
-}
-
-function getUser(data, userId) {
-    if (!data[userId]) {
-        data[userId] = {
+    if (!user) {
+        user = await User.create({
+            userId,
             wallet: 0,
             bank: 0,
-            lastDaily: 0
-        };
+            lastDaily: 0,
+            lastWork: 0
+        });
     }
 
-    return data[userId];
+    return user;
 }
 
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
-    const data = loadData();
-    const user = getUser(data, message.author.id);
+    const user = await getUserData(message.author.id);
 
     if (message.content === 'lemoney!balance') {
         return message.reply(`💰 Wallet: ${user.wallet}\n🏦 Bank: ${user.bank}`);
@@ -180,7 +183,7 @@ client.on('messageCreate', async (message) => {
         user.wallet += 1000;
         user.lastDaily = now;
 
-        saveData(data);
+        await user.save();
 
         return message.reply('🎉 You claimed your daily reward of $1,000!');
     }
@@ -202,10 +205,11 @@ client.on('messageCreate', async (message) => {
         user.wallet += amount;
         user.lastWork = now;
 
-        saveData(data);
+        await user.save();
 
         return message.reply(`💼 You worked and earned $${amount}!`);
     }
+
     if (message.content === 'lemoney!ping') {
         const sent = Date.now();
 
@@ -228,7 +232,7 @@ client.on('messageCreate', async (message) => {
         user.wallet -= amount;
         user.bank += amount;
 
-        saveData(data);
+        await user.save();
 
         return message.reply(`🏦 Deposited $${amount}.`);
     }
@@ -245,7 +249,7 @@ client.on('messageCreate', async (message) => {
         user.bank -= amount;
         user.wallet += amount;
 
-        saveData(data);
+        await user.save();
 
         return message.reply(`💸 Withdrew $${amount}.`);
     }
@@ -269,8 +273,9 @@ client.on('messageCreate', async (message) => {
 • lemoney!ping
         `);
     }
+
     if (message.content === 'lemoney!website') {
-    return message.reply(`https://limeydiscordbot.onrender.com`);
+        return message.reply(`https://limeydiscordbot.onrender.com`);
     }
 });
 
