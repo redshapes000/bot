@@ -1,5 +1,5 @@
 {
-  "name": "lemoneybot",
+  "name": "limeybot",
   "version": "1.0.0",
   "description": "",
   "repository": {
@@ -18,7 +18,6 @@
     "axios": "^1.17.0",
     "debug": "^4.4.3",
     "discord.js": "^14.26.4",
-    "discord.js-selfbot-v13": "^3.7.1",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "express-rate-limit": "^8.5.2",
