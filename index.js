@@ -4,6 +4,7 @@ const { Client } = require(process.env.DISCORD_VERSION);
 const fs = require('fs');
 const express = require('express');
 const mongoose = require('mongoose');
+const rateLimit = require('express-rate-limit');
 
 // ---------------- MONGODB ----------------
 mongoose.connect(process.env.MONGO_URI);
@@ -21,6 +22,20 @@ const User = mongoose.model('User', userSchema);
 // ---------------- WEB SERVER ----------------
 const app = express();
 const PORT = process.env.PORT || 3000;
+
+// RATE LIMITER
+const limiter = rateLimit({
+    windowMs: 15 * 60 * 1000, // 15 minutes
+    max: 100, // limit each IP to 100 requests per window
+    standardHeaders: true,
+    legacyHeaders: false,
+    message: {
+        error: "Too many requests, please try again later."
+    }
+});
+
+// APPLY RATE LIMITER
+app.use(limiter);
 
 app.get('/', async (req, res) => {
     const data = await User.find();
