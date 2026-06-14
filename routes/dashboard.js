@@ -1,8 +1,15 @@
 const express = require('express');
+const rateLimit = require('express-rate-limit');
 const { User, getUser } = require('../models/User');
 const { layout, money } = require('./pages');
 
 const router = express.Router();
+const dashboardLimiter = rateLimit({
+    windowMs: 60 * 1000,
+    max: 30,
+    standardHeaders: true,
+    legacyHeaders: false
+});
 
 function escapeHtml(value) {
     return String(value)
@@ -17,7 +24,7 @@ function leaderboardName(user) {
     return escapeHtml(user.displayName || user.userId);
 }
 
-router.get('/dashboard', async (req, res) => {
+router.get('/dashboard', dashboardLimiter, async (req, res) => {
     const users = await User.find();
     const top = await User.find().sort({ wallet: -1 }).limit(10);
     const total = users.reduce((sum, user) => sum + user.wallet + user.bank, 0);
