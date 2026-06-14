@@ -11,26 +11,15 @@ const {
 const express = require('express');
 const mongoose = require('mongoose');
 const rateLimit = require('express-rate-limit');
+const session = require('express-session');
+const fs = require('fs');
+const path = require('path');
 
 // ================= MONGODB =================
 mongoose.connect(process.env.MONGO_URI);
 
-// ================= USER MODEL =================
-const userSchema = new mongoose.Schema({
-    userId: String,
-    wallet: { type: Number, default: 0 },
-    bank: { type: Number, default: 0 },
-
-    lastDaily: { type: Number, default: 0 },
-    lastWork: { type: Number, default: 0 },
-    lastRob: { type: Number, default: 0 },
-
-    dailyStreak: { type: Number, default: 0 },
-
-    inventory: { type: Array, default: [] }
-});
-
-const User = mongoose.model('User', userSchema);
+// use modular User model
+const { User, getUser } = require('./models/User');
 
 // ================= SHOP =================
 const shopItems = [
@@ -61,29 +50,29 @@ async function getUser(id) {
 // ================= EXPRESS DASHBOARD =================
 const app = express();
 
+app.use(session({
+    secret: process.env.SESSION_SECRET || 'dev_secret',
+    resave: false,
+    saveUninitialized: false,
+    cookie: { secure: false }
+}));
+
 app.use(rateLimit({ windowMs: 15 * 60 * 1000, max: 100 }));
 
-app.get('/', async (req, res) => {
-    const users = await User.find();
-    const top = await User.find().sort({ wallet: -1 }).limit(10);
-
-    let total = 0;
-    users.forEach(u => total += (u.wallet + u.bank));
-
-    res.send(`
-    <html>
-    <body style="background:#0f1115;color:white;font-family:Arial;text-align:center">
-    <h1>💰 Economy Dashboard</h1>
-
-    <div>Total Users: ${users.length}</div>
-    <div>Total Economy: $${total}</div>
-
-    <h2>🏆 Leaderboard</h2>
-    ${top.map((u,i)=>`#${i+1} ${u.userId} - $${u.wallet}`).join("<br>")}
-    </body>
-    </html>
-    `);
-});
+// auto-load route modules from ./routes
+const routesDir = path.join(__dirname, 'routes');
+if (fs.existsSync(routesDir)) {
+    fs.readdirSync(routesDir)
+        .filter(f => f.endsWith('.js'))
+        .forEach(file => {
+            try {
+                const route = require(path.join(routesDir, file));
+                app.use('/', route);
+            } catch (err) {
+                console.error('Failed to load route', file, err);
+            }
+        });
+}
 
 app.listen(process.env.PORT || 3000);
 
