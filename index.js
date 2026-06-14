@@ -1,4 +1,263 @@
-require("dotenv").config();
 
-require("./bot");
-require("./dashboard/server");
+require('dotenv').config();
+
+const {Client} = require('discord.js-selfbot-v13');
+const fs = require('fs');
+const express = require('express');
+
+const DATA_FILE = './users.json';
+
+// ---------------- WEB SERVER ----------------
+const app = express();
+const PORT = 3000;
+
+app.get('/', (req, res) => {
+    const data = loadData();
+
+    let users = Object.keys(data).length;
+    let totalMoney = 0;
+
+    for (const id in data) {
+        totalMoney += (data[id].wallet || 0) + (data[id].bank || 0);
+    }
+
+    res.send(`
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Lemoney Dashboard</title>
+    <style>
+        body {
+            margin: 0;
+            font-family: Arial, sans-serif;
+            background: #0f1115;
+            color: #ffffff;
+        }
+
+        .container {
+            max-width: 900px;
+            margin: 50px auto;
+            padding: 20px;
+        }
+
+        .title {
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 20px;
+            color: #00ff99;
+        }
+
+        .card {
+            background: #1a1d24;
+            padding: 20px;
+            margin-bottom: 15px;
+            border-radius: 12px;
+        }
+
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 15px;
+        }
+
+        .stat {
+            background: #151821;
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .stat h2 {
+            margin: 0;
+            color: #00ff99;
+        }
+
+        .online {
+            color: #00ff99;
+            font-weight: bold;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="container">
+
+        <div class="title">💰 Lemoney Dashboard</div>
+
+        <div class="card">
+            Status: <span class="online">🟢 Online</span>
+        </div>
+
+        <div class="stats">
+            <div class="stat">
+                <h2>${users}</h2>
+                <p>Users</p>
+            </div>
+
+            <div class="stat">
+                <h2>$${totalMoney}</h2>
+                <p>Total Economy</p>
+            </div>
+
+            <div class="stat">
+                <h2>24/7</h2>
+                <p>Uptime</p>
+            </div>
+        </div>
+
+    </div>
+</body>
+</html>
+    `);
+});
+
+app.get('/api/stats', (req, res) => {
+    const data = loadData();
+
+    res.json({
+        users: Object.keys(data).length,
+        data
+    });
+});
+
+app.listen(PORT, () => {
+    console.log(`Web server running on http://localhost:${PORT}`);
+});
+
+// ---------------- DISCORD BOT ----------------
+
+const client = new Client({
+    checkUpdate: false,
+});
+
+client.on('ready', async () => {
+    console.log(`Client is ready!`);
+});
+
+function loadData() {
+    if (!fs.existsSync(DATA_FILE)) {
+        fs.writeFileSync(DATA_FILE, '{}');
+    }
+
+    return JSON.parse(fs.readFileSync(DATA_FILE));
+}
+
+function saveData(data) {
+    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 4));
+}
+
+function getUser(data, userId) {
+    if (!data[userId]) {
+        data[userId] = {
+            wallet: 0,
+            bank: 0,
+            lastDaily: 0
+        };
+    }
+
+    return data[userId];
+}
+
+client.on('messageCreate', async (message) => {
+    if (message.author.bot) return;
+
+    const data = loadData();
+    const user = getUser(data, message.author.id);
+
+    if (message.content === 'lemoney!balance') {
+        return message.reply(`💰 Wallet: ${user.wallet}\n🏦 Bank: ${user.bank}`);
+    }
+
+    if (message.content === 'lemoney!daily') {
+        const now = Date.now();
+        const cooldown = 24 * 60 * 60 * 1000;
+
+        if (now - user.lastDaily < cooldown) {
+            const hours = Math.ceil((cooldown - (now - user.lastDaily)) / 3600000);
+            return message.reply(`⏰ You can claim daily again in ${hours} hours.`);
+        }
+
+        user.wallet += 1000;
+        user.lastDaily = now;
+
+        saveData(data);
+
+        return message.reply('🎉 You claimed your daily reward of $1,000!');
+    }
+
+    if (message.content === 'lemoney!work') {
+        const cooldown = 30 * 60 * 1000;
+        const now = Date.now();
+
+        if (now - user.lastWork < cooldown) {
+            const remaining = cooldown - (now - user.lastWork);
+            const minutes = Math.floor(remaining / 60000);
+            const seconds = Math.floor((remaining % 60000) / 1000);
+
+            return message.reply(`⏰ You can work again in ${minutes}m ${seconds}s.`);
+        }
+
+        const amount = Math.floor(Math.random() * 500) + 100;
+
+        user.wallet += amount;
+        user.lastWork = now;
+
+        saveData(data);
+
+        return message.reply(`💼 You worked and earned $${amount}!`);
+    }
+
+    if (message.content.startsWith('lemoney!deposit ')) {
+        const amount = parseInt(message.content.split(' ')[1]);
+
+        if (isNaN(amount) || amount <= 0)
+            return message.reply('Invalid amount.');
+
+        if (user.wallet < amount)
+            return message.reply('Not enough money.');
+
+        user.wallet -= amount;
+        user.bank += amount;
+
+        saveData(data);
+
+        return message.reply(`🏦 Deposited $${amount}.`);
+    }
+
+    if (message.content.startsWith('lemoney!withdraw ')) {
+        const amount = parseInt(message.content.split(' ')[1]);
+
+        if (isNaN(amount) || amount <= 0)
+            return message.reply('Invalid amount.');
+
+        if (user.bank < amount)
+            return message.reply('Not enough money in bank.');
+
+        user.bank -= amount;
+        user.wallet += amount;
+
+        saveData(data);
+
+        return message.reply(`💸 Withdrew $${amount}.`);
+    }
+
+    if (message.content === 'lemoney!help') {
+        return message.reply(`
+💰 Lemoney Commands
+
+📊 Economy
+• lemoney!balance
+• lemoney!daily
+• lemoney!work
+
+🏦 Banking
+• lemoney!deposit <amount>
+• lemoney!withdraw <amount>
+
+ℹ️ Utility
+• lemoney!help
+        `);
+    }
+});
+
+client.login(process.env.DISCORD_TOKEN);
