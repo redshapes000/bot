@@ -1,6 +1,13 @@
 require('dotenv').config();
 
-const { Client, GatewayIntentBits } = require('discord.js');
+const { 
+    Client, 
+    GatewayIntentBits, 
+    REST, 
+    Routes,
+    SlashCommandBuilder
+} = require('discord.js');
+
 const express = require('express');
 const mongoose = require('mongoose');
 const rateLimit = require('express-rate-limit');
@@ -15,19 +22,13 @@ const userSchema = new mongoose.Schema({
 
     lastDaily: { type: Number, default: 0 },
     lastWork: { type: Number, default: 0 },
-    lastWeekly: { type: Number, default: 0 },
-    lastMonthly: { type: Number, default: 0 },
-    lastYearly: { type: Number, default: 0 },
 
-    dailyStreak: { type: Number, default: 0 },
-    weeklyStreak: { type: Number, default: 0 },
-    monthlyStreak: { type: Number, default: 0 },
-    yearlyStreak: { type: Number, default: 0 }
+    dailyStreak: { type: Number, default: 0 }
 });
 
 const User = mongoose.model('User', userSchema);
 
-// ================= SAFE HELPER =================
+// ================= SAFE AMOUNT =================
 function safeAmount(amount) {
     const num = parseInt(amount);
     if (isNaN(num) || num <= 0) return null;
@@ -35,7 +36,7 @@ function safeAmount(amount) {
     return num;
 }
 
-// ================= EXPRESS DASHBOARD =================
+// ================= EXPRESS =================
 const app = express();
 
 app.use(rateLimit({
@@ -53,12 +54,12 @@ app.get('/', async (req, res) => {
     res.send(`
     <html>
     <head>
-    <title>Limey Bot</title>
-    <style>
-        body { background:#0f1115;color:white;font-family:Arial;text-align:center; }
-        .card { background:#1a1d24;padding:20px;margin:10px;border-radius:10px; }
-        .green { color:#00ff99; }
-    </style>
+        <title>Limey Dashboard</title>
+        <style>
+            body { background:#0f1115;color:white;font-family:Arial;text-align:center; }
+            .card { background:#1a1d24;padding:20px;margin:10px;border-radius:10px; }
+            .green { color:#00ff99; }
+        </style>
     </head>
     <body>
 
@@ -80,7 +81,7 @@ app.get('/', async (req, res) => {
 
 app.listen(process.env.PORT || 3000);
 
-// ================= DISCORD BOT =================
+// ================= DISCORD CLIENT =================
 const client = new Client({
     intents: [
         GatewayIntentBits.Guilds,
@@ -91,13 +92,40 @@ const client = new Client({
 
 const cooldown = new Map();
 
+// ================= GET USER =================
 async function getUser(id) {
     let user = await User.findOne({ userId: id });
     if (!user) user = await User.create({ userId: id });
     return user;
 }
 
-// ================= COMMAND HANDLER =================
+// ================= SLASH COMMANDS =================
+const commands = [
+    new SlashCommandBuilder().setName('balance').setDescription('Check balance'),
+    new SlashCommandBuilder().setName('daily').setDescription('Claim daily reward'),
+    new SlashCommandBuilder().setName('work').setDescription('Work for money'),
+    new SlashCommandBuilder().setName('leaderboard').setDescription('Top users'),
+    new SlashCommandBuilder().setName('help').setDescription('Commands list')
+].map(c => c.toJSON());
+
+const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
+
+(async () => {
+    try {
+        console.log("🔄 Registering slash commands...");
+        await rest.put(
+            Routes.applicationCommands(process.env.CLIENT_ID),
+            { body: commands }
+        );
+        console.log("✅ Slash commands ready");
+    } catch (err) {
+        console.error(err);
+    }
+})();
+
+// ================= PREFIX + SLASH =================
+
+// PREFIX COMMANDS
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
@@ -109,12 +137,12 @@ client.on('messageCreate', async (message) => {
     const user = await getUser(message.author.id);
     const msg = message.content.toLowerCase();
 
-    // ================= BALANCE =================
+    // BALANCE
     if (msg === 'limey!balance') {
         return message.reply(`💰 Wallet: $${user.wallet}\n🏦 Bank: $${user.bank}`);
     }
 
-    // ================= DAILY =================
+    // DAILY
     if (msg === 'limey!daily') {
         const cooldownTime = 86400000;
 
@@ -139,7 +167,7 @@ client.on('messageCreate', async (message) => {
         return message.reply(`🎉 +$${reward} (Streak ${user.dailyStreak})`);
     }
 
-    // ================= WORK =================
+    // WORK
     if (msg === 'limey!work') {
         const cooldownTime = 30 * 60 * 1000;
 
@@ -157,7 +185,7 @@ client.on('messageCreate', async (message) => {
         return message.reply(`💼 You earned $${amount}`);
     }
 
-    // ================= DEPOSIT =================
+    // DEPOSIT
     if (msg.startsWith('limey!deposit')) {
         const amount = safeAmount(msg.split(' ')[1]);
         if (!amount) return message.reply("Invalid amount");
@@ -170,7 +198,7 @@ client.on('messageCreate', async (message) => {
         return message.reply(`🏦 Deposited $${amount}`);
     }
 
-    // ================= WITHDRAW =================
+    // WITHDRAW
     if (msg.startsWith('limey!withdraw')) {
         const amount = safeAmount(msg.split(' ')[1]);
         if (!amount) return message.reply("Invalid amount");
@@ -183,7 +211,7 @@ client.on('messageCreate', async (message) => {
         return message.reply(`💸 Withdrew $${amount}`);
     }
 
-    // ================= LEADERBOARD =================
+    // LEADERBOARD
     if (msg === 'limey!leaderboard') {
         const top = await User.find().sort({ wallet: -1 }).limit(10);
 
@@ -193,25 +221,19 @@ client.on('messageCreate', async (message) => {
         );
     }
 
-    // ================= HELP =================
+    // HELP
     if (msg === 'limey!help') {
         return message.reply(`
 💰 Limey Commands
 
-• limey!balance
-• limey!daily
-• limey!work
-
-🏦 Bank:
-• limey!deposit <amount>
-• limey!withdraw <amount>
-
-🏆:
-• limey!leaderboard
-
-🌐:
-• limey!website
-• limey!status
+limey!balance
+limey!daily
+limey!work
+limey!deposit <amount>
+limey!withdraw <amount>
+limey!leaderboard
+limey!website
+limey!status
         `);
     }
 
@@ -221,6 +243,80 @@ client.on('messageCreate', async (message) => {
 
     if (msg === 'limey!status') {
         return message.reply(process.env.STATUS_URL || "Not set");
+    }
+});
+
+// SLASH COMMANDS
+client.on('interactionCreate', async (interaction) => {
+    if (!interaction.isChatInputCommand()) return;
+
+    const user = await getUser(interaction.user.id);
+    const now = Date.now();
+
+    if (interaction.commandName === 'balance') {
+        return interaction.reply(`💰 Wallet: $${user.wallet}\n🏦 Bank: $${user.bank}`);
+    }
+
+    if (interaction.commandName === 'daily') {
+        const cooldownTime = 86400000;
+
+        if (now - user.lastDaily < cooldownTime) {
+            const hours = Math.ceil((cooldownTime - (now - user.lastDaily)) / 3600000);
+            return interaction.reply({ content: `⏰ Wait ${hours}h`, ephemeral: true });
+        }
+
+        if (now - user.lastDaily < 172800000 && user.lastDaily) {
+            user.dailyStreak++;
+        } else {
+            user.dailyStreak = 1;
+        }
+
+        const reward = 1000 + user.dailyStreak * 200;
+
+        user.wallet += reward;
+        user.lastDaily = now;
+
+        await user.save();
+
+        return interaction.reply(`🎉 +$${reward} (Streak ${user.dailyStreak})`);
+    }
+
+    if (interaction.commandName === 'work') {
+        const cooldownTime = 30 * 60 * 1000;
+
+        if (now - user.lastWork < cooldownTime) {
+            return interaction.reply({ content: "⏰ You're tired, wait a bit", ephemeral: true });
+        }
+
+        const amount = Math.floor(Math.random() * 500) + 100;
+
+        user.wallet += amount;
+        user.lastWork = now;
+
+        await user.save();
+
+        return interaction.reply(`💼 You earned $${amount}`);
+    }
+
+    if (interaction.commandName === 'leaderboard') {
+        const top = await User.find().sort({ wallet: -1 }).limit(10);
+
+        return interaction.reply(
+            "🏆 Leaderboard\n" +
+            top.map((u,i)=>`#${i+1} ${u.userId} - $${u.wallet}`).join("\n")
+        );
+    }
+
+    if (interaction.commandName === 'help') {
+        return interaction.reply(`
+💰 Limey Commands
+
+/balance
+/daily
+/work
+/leaderboard
+/help
+        `);
     }
 });
 
