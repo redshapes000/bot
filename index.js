@@ -14,10 +14,28 @@ const userSchema = new mongoose.Schema({
     wallet: Number,
     bank: Number,
     lastDaily: Number,
-    lastWork: Number
+    lastWork: Number,
+
+    // ADDED (streak + cooldown tracking)
+    lastWeekly: Number,
+    lastMonthly: Number,
+    lastYearly: Number,
+
+    dailyStreak: Number,
+    weeklyStreak: Number,
+    monthlyStreak: Number,
+    yearlyStreak: Number
 });
 
 const User = mongoose.model('User', userSchema);
+
+// ---------------- SAFE HELPERS ----------------
+function safeAmount(amount) {
+    amount = parseInt(amount);
+    if (isNaN(amount) || amount <= 0) return null;
+    if (amount > 1_000_000) return null; // anti exploit cap
+    return amount;
+}
 
 // ---------------- WEB SERVER ----------------
 const app = express();
@@ -25,16 +43,13 @@ const PORT = process.env.PORT || 3000;
 
 // RATE LIMITER
 const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, // 15 minutes
-    max: 100, // limit each IP to 100 requests per window
+    windowMs: 15 * 60 * 1000,
+    max: 100,
     standardHeaders: true,
     legacyHeaders: false,
-    message: {
-        error: "Too many requests, please try again later."
-    }
+    message: { error: "Too many requests, please try again later." }
 });
 
-// APPLY RATE LIMITER
 app.use(limiter);
 
 app.get('/', async (req, res) => {
@@ -46,6 +61,8 @@ app.get('/', async (req, res) => {
     for (const u of data) {
         totalMoney += (u.wallet || 0) + (u.bank || 0);
     }
+
+    const top = await User.find().sort({ wallet: -1 }).limit(10);
 
     res.send(`
 <!DOCTYPE html>
@@ -106,32 +123,37 @@ app.get('/', async (req, res) => {
 </head>
 
 <body>
-    <div class="container">
+<div class="container">
 
-        <div class="title">💰 Lemoney Dashboard</div>
+<div class="title">💰 Lemoney Dashboard</div>
 
-        <div class="card">
-            Status: <span class="online">🟢 Online</span>
-        </div>
+<div class="card">
+Status: <span class="online">🟢 Online</span>
+</div>
 
-        <div class="stats">
-            <div class="stat">
-                <h2>${users}</h2>
-                <p>Users</p>
-            </div>
-
-            <div class="stat">
-                <h2>$${totalMoney}</h2>
-                <p>Total Economy</p>
-            </div>
-
-            <div class="stat">
-                <h2>24/7</h2>
-                <p>Uptime</p>
-            </div>
-        </div>
-
+<div class="stats">
+    <div class="stat">
+        <h2>${users}</h2>
+        <p>Users</p>
     </div>
+
+    <div class="stat">
+        <h2>$${totalMoney}</h2>
+        <p>Total Economy</p>
+    </div>
+
+    <div class="stat">
+        <h2>24/7</h2>
+        <p>Uptime</p>
+    </div>
+</div>
+
+<div class="card">
+<h2>🏆 Leaderboard</h2>
+${top.map((u, i) => `<p>#${i + 1} ${u.userId} — $${u.wallet}</p>`).join('')}
+</div>
+
+</div>
 </body>
 </html>
     `);
@@ -156,11 +178,10 @@ const client = new Client({
     checkUpdate: false,
 });
 
-client.on('ready', async () => {
-    console.log(`Client is ready!`);
-});
+// ---------------- SPAM PROTECTION ----------------
+const cooldownMap = new Map();
 
-// ---------------- HELPERS (MINIMAL CHANGE) ----------------
+// ---------------- USER FETCH (SAFE) ----------------
 async function getUserData(userId) {
     let user = await User.findOne({ userId });
 
@@ -170,49 +191,81 @@ async function getUserData(userId) {
             wallet: 0,
             bank: 0,
             lastDaily: 0,
-            lastWork: 0
+            lastWork: 0,
+            lastWeekly: 0,
+            lastMonthly: 0,
+            lastYearly: 0,
+            dailyStreak: 0,
+            weeklyStreak: 0,
+            monthlyStreak: 0,
+            yearlyStreak: 0
         });
     }
+
+    user.wallet ??= 0;
+    user.bank ??= 0;
 
     return user;
 }
 
+client.on('ready', async () => {
+    console.log(`Client is ready!`);
+});
+
+// ---------------- MESSAGE HANDLER ----------------
 client.on('messageCreate', async (message) => {
     if (message.author.bot) return;
 
+    // simple anti spam
+    const nowGlobal = Date.now();
+    const last = cooldownMap.get(message.author.id) || 0;
+    if (nowGlobal - last < 1200) return;
+    cooldownMap.set(message.author.id, nowGlobal);
+
     const user = await getUserData(message.author.id);
 
+    // ---------------- BALANCE ----------------
     if (message.content === 'lemoney!balance') {
         return message.reply(`💰 Wallet: ${user.wallet}\n🏦 Bank: ${user.bank}`);
     }
 
+    // ---------------- DAILY + STREAK ----------------
     if (message.content === 'lemoney!daily') {
         const now = Date.now();
-        const cooldown = 24 * 60 * 60 * 1000;
+        const cooldown = 86400000;
 
         if (now - user.lastDaily < cooldown) {
             const hours = Math.ceil((cooldown - (now - user.lastDaily)) / 3600000);
             return message.reply(`⏰ You can claim daily again in ${hours} hours.`);
         }
 
-        user.wallet += 1000;
+        // streak logic
+        if (now - user.lastDaily < 172800000 && user.lastDaily !== 0) {
+            user.dailyStreak = (user.dailyStreak || 0) + 1;
+        } else {
+            user.dailyStreak = 1;
+        }
+
+        let reward = 1000 + (user.dailyStreak * 200);
+
+        user.wallet += reward;
         user.lastDaily = now;
 
         await user.save();
 
-        return message.reply('🎉 You claimed your daily reward of $1,000!');
+        return message.reply(`🎉 Daily: $${reward} 🔥 (Streak ${user.dailyStreak})`);
     }
 
+    // ---------------- WORK ----------------
     if (message.content === 'lemoney!work') {
-        const cooldown = 30 * 60 * 1000;
         const now = Date.now();
+        const cooldown = 30 * 60 * 1000;
 
         if (now - user.lastWork < cooldown) {
             const remaining = cooldown - (now - user.lastWork);
-            const minutes = Math.floor(remaining / 60000);
-            const seconds = Math.floor((remaining % 60000) / 1000);
-
-            return message.reply(`⏰ You can work again in ${minutes}m ${seconds}s.`);
+            const m = Math.floor(remaining / 60000);
+            const s = Math.floor((remaining % 60000) / 1000);
+            return message.reply(`⏰ Wait ${m}m ${s}s`);
         }
 
         const amount = Math.floor(Math.random() * 500) + 100;
@@ -222,78 +275,136 @@ client.on('messageCreate', async (message) => {
 
         await user.save();
 
-        return message.reply(`💼 You worked and earned $${amount}!`);
+        return message.reply(`💼 You earned $${amount}`);
     }
 
-    if (message.content === 'lemoney!ping') {
-        const sent = Date.now();
+    // ---------------- WEEKLY ----------------
+    if (message.content === 'lemoney!weekly') {
+        const now = Date.now();
+        const cooldown = 7 * 86400000;
 
-        const msg = await message.reply('🏓 Pinging...');
+        if (now - user.lastWeekly < cooldown) {
+            const days = Math.ceil((cooldown - (now - user.lastWeekly)) / 86400000);
+            return message.reply(`⏰ Wait ${days} days`);
+        }
 
-        const latency = Date.now() - sent;
+        user.weeklyStreak = (now - user.lastWeekly < 14 * 86400000 && user.lastWeekly) 
+            ? (user.weeklyStreak || 0) + 1 
+            : 1;
 
-        return msg.edit(`🏓 Pong! Latency: ${latency}ms`);
+        let reward = 5000 + (user.weeklyStreak * 1500);
+
+        user.wallet += reward;
+        user.lastWeekly = now;
+
+        await user.save();
+
+        return message.reply(`🎉 Weekly: $${reward} 🔥 (Streak ${user.weeklyStreak})`);
     }
 
+    // ---------------- MONTHLY ----------------
+    if (message.content === 'lemoney!monthly') {
+        const now = Date.now();
+        const cooldown = 30 * 86400000;
+
+        if (now - user.lastMonthly < cooldown) {
+            const days = Math.ceil((cooldown - (now - user.lastMonthly)) / 86400000);
+            return message.reply(`⏰ Wait ${days} days`);
+        }
+
+        user.monthlyStreak = (now - user.lastMonthly < 60 * 86400000 && user.lastMonthly)
+            ? (user.monthlyStreak || 0) + 1
+            : 1;
+
+        let reward = 20000 + (user.monthlyStreak * 5000);
+
+        user.wallet += reward;
+        user.lastMonthly = now;
+
+        await user.save();
+
+        return message.reply(`🎉 Monthly: $${reward} 🔥 (Streak ${user.monthlyStreak})`);
+    }
+
+    // ---------------- YEARLY ----------------
+    if (message.content === 'lemoney!yearly') {
+        const now = Date.now();
+        const cooldown = 365 * 86400000;
+
+        if (now - user.lastYearly < cooldown) {
+            const days = Math.ceil((cooldown - (now - user.lastYearly)) / 86400000);
+            return message.reply(`⏰ Wait ${days} days`);
+        }
+
+        user.yearlyStreak = (user.yearlyStreak || 0) + 1;
+
+        user.wallet += 100000;
+        user.lastYearly = now;
+
+        await user.save();
+
+        return message.reply(`🎉 Yearly: $100,000 🔥 (Streak ${user.yearlyStreak})`);
+    }
+
+    // ---------------- DEPOSIT ----------------
     if (message.content.startsWith('lemoney!deposit ')) {
-        const amount = parseInt(message.content.split(' ')[1]);
-
-        if (isNaN(amount) || amount <= 0)
-            return message.reply('Invalid amount.');
-
-        if (user.wallet < amount)
-            return message.reply('Not enough money.');
+        const amount = safeAmount(message.content.split(' ')[1]);
+        if (!amount) return message.reply("Invalid amount");
+        if (user.wallet < amount) return message.reply("Not enough money");
 
         user.wallet -= amount;
         user.bank += amount;
 
         await user.save();
 
-        return message.reply(`🏦 Deposited $${amount}.`);
+        return message.reply(`🏦 Deposited $${amount}`);
     }
 
+    // ---------------- WITHDRAW ----------------
     if (message.content.startsWith('lemoney!withdraw ')) {
-        const amount = parseInt(message.content.split(' ')[1]);
-
-        if (isNaN(amount) || amount <= 0)
-            return message.reply('Invalid amount.');
-
-        if (user.bank < amount)
-            return message.reply('Not enough money in bank.');
+        const amount = safeAmount(message.content.split(' ')[1]);
+        if (!amount) return message.reply("Invalid amount");
+        if (user.bank < amount) return message.reply("Not enough bank");
 
         user.bank -= amount;
         user.wallet += amount;
 
         await user.save();
 
-        return message.reply(`💸 Withdrew $${amount}.`);
+        return message.reply(`💸 Withdrew $${amount}`);
     }
 
+    // ---------------- LEADERBOARD ----------------
+    if (message.content === 'lemoney!leaderboard') {
+        const top = await User.find().sort({ wallet: -1 }).limit(10);
+
+        return message.reply(
+            "🏆 Leaderboard\n\n" +
+            top.map((u, i) => `#${i + 1} ${u.userId} — $${u.wallet}`).join("\n")
+        );
+    }
+
+    // ---------------- HELP ----------------
     if (message.content === 'lemoney!help') {
         return message.reply(`
 💰 Lemoney Commands
 
-📊 Economy
-• lemoney!balance
-• lemoney!daily
-• lemoney!work
-
-🏦 Banking
-• lemoney!deposit <amount>
-• lemoney!withdraw <amount>
-
-ℹ️ Utility
-• lemoney!help
-• lemoney!website
-• lemoney!ping
-• lemoney!status
+lemoney!balance
+lemoney!daily
+lemoney!work
+lemoney!weekly
+lemoney!monthly
+lemoney!yearly
+lemoney!deposit <amount>
+lemoney!withdraw <amount>
+lemoney!leaderboard
         `);
     }
 
     if (message.content === 'lemoney!website') {
         return message.reply(`https://limeydiscordbot.onrender.com`);
     }
-    
+
     if (message.content === 'lemoney!status') {
         return message.reply(`https://lemoneydiscordbot.betteruptime.com/`);
     }
