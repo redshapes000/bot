@@ -114,12 +114,22 @@ const commands = [
 // ================= REGISTER COMMANDS =================
 const rest = new REST({ version: '10' }).setToken(process.env.DISCORD_TOKEN);
 
-(async () => {
-    await rest.put(
-        Routes.applicationCommands(process.env.CLIENT_ID),
-        { body: commands }
-    );
-})();
+const appId = process.env.DISCORD_CLIENT_ID || process.env.CLIENT_ID;
+if (!appId) {
+    console.warn('DISCORD_CLIENT_ID not set; skipping application command registration');
+} else {
+    (async () => {
+        try {
+            await rest.put(
+                Routes.applicationCommands(appId),
+                { body: commands }
+            );
+            console.log('Registered application commands for', appId);
+        } catch (err) {
+            console.error('Failed to register commands', err);
+        }
+    })();
+}
 
 // ================= SLASH HANDLER =================
 client.on('interactionCreate', async (i) => {
